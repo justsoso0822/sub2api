@@ -1,0 +1,48 @@
+name: Apply EasyPay GET query patch
+
+on:
+  push:
+    branches:
+      - fix/easypay-query-get
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Convert EasyPay order query to GET
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path("backend/internal/payment/provider/easypay.go")
+          s = p.read_text()
+          old = '''\tbody, err := e.post(ctx, e.apiBase()+"/api.php", params)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf("easypay query: %w", err)\n\t}'''
+          new = '''\tquery := url.Values{}\n\tfor k, v := range params {\n\t\tquery.Set(k, v)\n\t}\n\treq, err := http.NewRequestWithContext(ctx, http.MethodGet, e.apiBase()+"/api.php?"+query.Encode(), nil)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf("easypay query request: %w", err)\n\t}\n\tclient := e.httpClient\n\tif client == nil {\n\t\tclient = &http.Client{Timeout: easypayHTTPTimeout}\n\t}\n\tresp, err := client.Do(req)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf("easypay query: %w", err)\n\t}\n\tdefer func() { _ = resp.Body.Close() }()\n\tbody, err := io.ReadAll(io.LimitReader(resp.Body, maxEasypayResponseSize))\n\tif err != nil {\n\t\treturn nil, fmt.Errorf("easypay query read response: %w", err)\n\t}'''
+          if old not in s:
+              raise SystemExit("target QueryOrder block not found")
+          p.write_text(s.replace(old, new, 1))
+
+          p = Path("backend/internal/payment/provider/easypay_query_test.go")
+          s = p.read_text()
+          s = s.replace('''\t\t\t\tif r.Method != http.MethodPost {\n\t\t\t\t\tt.Errorf("method = %q, want %q", r.Method, http.MethodPost)\n\t\t\t\t}\n\t\t\t\tif r.URL.Path != "/api.php" {\n\t\t\t\t\tt.Errorf("path = %q, want /api.php", r.URL.Path)\n\t\t\t\t}\n\t\t\t\tif err := r.ParseForm(); err != nil {\n\t\t\t\t\tt.Errorf("ParseForm: %v", err)\n\t\t\t\t}\n\t\t\t\tgotForm = make(url.Values, len(r.PostForm))\n\t\t\t\tfor key, values := range r.PostForm {\n\t\t\t\t\tgotForm[key] = append([]string(nil), values...)\n\t\t\t\t}''', '''\t\t\t\tif r.Method != http.MethodGet {\n\t\t\t\t\tt.Errorf("method = %q, want %q", r.Method, http.MethodGet)\n\t\t\t\t}\n\t\t\t\tif r.URL.Path != "/api.php" {\n\t\t\t\t\tt.Errorf("path = %q, want /api.php", r.URL.Path)\n\t\t\t\t}\n\t\t\t\tgotForm = r.URL.Query()''')
+          s = s.replace('if got := gotForm.Get(key); got != want {', 'if got := gotForm.Get(key); got != want {')
+          p.write_text(s)
+
+      - name: Test
+        working-directory: backend
+        run: go test ./internal/payment/provider
+
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/internal/payment/provider/easypay.go backend/internal/payment/provider/easypay_query_test.go
+          git diff --cached --quiet || git commit -m "fix: use GET for EasyPay order queries"
+          git push

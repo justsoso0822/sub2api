@@ -31,9 +31,11 @@ jobs:
 
           p = Path("backend/internal/payment/provider/easypay_query_test.go")
           s = p.read_text()
-          s = s.replace('''\t\t\t\tif r.Method != http.MethodPost {\n\t\t\t\t\tt.Errorf("method = %q, want %q", r.Method, http.MethodPost)\n\t\t\t\t}\n\t\t\t\tif r.URL.Path != "/api.php" {\n\t\t\t\t\tt.Errorf("path = %q, want /api.php", r.URL.Path)\n\t\t\t\t}\n\t\t\t\tif err := r.ParseForm(); err != nil {\n\t\t\t\t\tt.Errorf("ParseForm: %v", err)\n\t\t\t\t}\n\t\t\t\tgotForm = make(url.Values, len(r.PostForm))\n\t\t\t\tfor key, values := range r.PostForm {\n\t\t\t\t\tgotForm[key] = append([]string(nil), values...)\n\t\t\t\t}''', '''\t\t\t\tif r.Method != http.MethodGet {\n\t\t\t\t\tt.Errorf("method = %q, want %q", r.Method, http.MethodGet)\n\t\t\t\t}\n\t\t\t\tif r.URL.Path != "/api.php" {\n\t\t\t\t\tt.Errorf("path = %q, want /api.php", r.URL.Path)\n\t\t\t\t}\n\t\t\t\tgotForm = r.URL.Query()''')
-          s = s.replace('if got := gotForm.Get(key); got != want {', 'if got := gotForm.Get(key); got != want {')
-          p.write_text(s)
+          old_test = '''\t\t\t\tif r.Method != http.MethodPost {\n\t\t\t\t\tt.Errorf("method = %q, want %q", r.Method, http.MethodPost)\n\t\t\t\t}\n\t\t\t\tif r.URL.Path != "/api.php" {\n\t\t\t\t\tt.Errorf("path = %q, want /api.php", r.URL.Path)\n\t\t\t\t}\n\t\t\t\tif err := r.ParseForm(); err != nil {\n\t\t\t\t\tt.Errorf("ParseForm: %v", err)\n\t\t\t\t}\n\t\t\t\tgotForm = make(url.Values, len(r.PostForm))\n\t\t\t\tfor key, values := range r.PostForm {\n\t\t\t\t\tgotForm[key] = append([]string(nil), values...)\n\t\t\t\t}'''
+          new_test = '''\t\t\t\tif r.Method != http.MethodGet {\n\t\t\t\t\tt.Errorf("method = %q, want %q", r.Method, http.MethodGet)\n\t\t\t\t}\n\t\t\t\tif r.URL.Path != "/api.php" {\n\t\t\t\t\tt.Errorf("path = %q, want /api.php", r.URL.Path)\n\t\t\t\t}\n\t\t\t\tgotForm = r.URL.Query()'''
+          if old_test not in s:
+              raise SystemExit("target test block not found")
+          p.write_text(s.replace(old_test, new_test, 1))
 
       - name: Test
         working-directory: backend

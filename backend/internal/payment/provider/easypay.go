@@ -258,9 +258,26 @@ func (e *EasyPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 		"act": "order", "pid": e.config["pid"],
 		"key": e.config["pkey"], "out_trade_no": tradeNo,
 	}
-	body, err := e.post(ctx, e.apiBase()+"/api.php", params)
+	query := url.Values{}
+	for k, v := range params {
+		query.Set(k, v)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.apiBase()+"/api.php?"+query.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("easypay query request: %w", err)
+	}
+	client := e.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: easypayHTTPTimeout}
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("easypay query: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxEasypayResponseSize))
+	if err != nil {
+		return nil, fmt.Errorf("easypay query read response: %w", err)
 	}
 	type easyPayQueryData struct {
 		TradeStatus *string `json:"trade_status"`

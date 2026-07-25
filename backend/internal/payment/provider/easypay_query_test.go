@@ -84,19 +84,13 @@ func TestEasyPayQueryOrderStatusMapping(t *testing.T) {
 
 			var gotForm url.Values
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodPost {
-					t.Errorf("method = %q, want %q", r.Method, http.MethodPost)
+				if r.Method != http.MethodGet {
+					t.Errorf("method = %q, want %q", r.Method, http.MethodGet)
 				}
 				if r.URL.Path != "/api.php" {
 					t.Errorf("path = %q, want /api.php", r.URL.Path)
 				}
-				if err := r.ParseForm(); err != nil {
-					t.Errorf("ParseForm: %v", err)
-				}
-				gotForm = make(url.Values, len(r.PostForm))
-				for key, values := range r.PostForm {
-					gotForm[key] = append([]string(nil), values...)
-				}
+				gotForm = r.URL.Query()
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(tt.body))
 			}))

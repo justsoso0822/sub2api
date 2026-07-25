@@ -16,35 +16,41 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Convert EasyPay order query to GET
+      - name: Apply patch
         shell: python
         run: |
           from pathlib import Path
 
           p = Path("backend/internal/payment/provider/easypay.go")
           s = p.read_text()
-          old = '''\tbody, err := e.post(ctx, e.apiBase()+"/api.php", params)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf("easypay query: %w", err)\n\t}'''
-          new = '''\tquery := url.Values{}\n\tfor k, v := range params {\n\t\tquery.Set(k, v)\n\t}\n\treq, err := http.NewRequestWithContext(ctx, http.MethodGet, e.apiBase()+"/api.php?"+query.Encode(), nil)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf("easypay query request: %w", err)\n\t}\n\tclient := e.httpClient\n\tif client == nil {\n\t\tclient = &http.Client{Timeout: easypayHTTPTimeout}\n\t}\n\tresp, err := client.Do(req)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf("easypay query: %w", err)\n\t}\n\tdefer func() { _ = resp.Body.Close() }()\n\tbody, err := io.ReadAll(io.LimitReader(resp.Body, maxEasypayResponseSize))\n\tif err != nil {\n\t\treturn nil, fmt.Errorf("easypay query read response: %w", err)\n\t}'''
-          if old not in s:
-              raise SystemExit("target QueryOrder block not found")
-          p.write_text(s.replace(old, new, 1))
+          marker = 'func (e *EasyPay) QueryOrder'
+          start = s.index(marker)
+          before, after = s[:start], s[start:]
+          old = 'body, err := e.post(ctx, e.apiBase()+"/api.php", params)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf("easypay query: %w", err)\n\t}'
+          new = '''query := url.Values{}\n\tfor k, v := range params {\n\t\tquery.Set(k, v)\n\t}\n\treq, err := http.NewRequestWithContext(ctx, http.MethodGet, e.apiBase()+"/api.php?"+query.Encode(), nil)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf("easypay query request: %w", err)\n\t}\n\tclient := e.httpClient\n\tif client == nil {\n\t\tclient = &http.Client{Timeout: easypayHTTPTimeout}\n\t}\n\tresp, err := client.Do(req)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf("easypay query: %w", err)\n\t}\n\tdefer func() { _ = resp.Body.Close() }()\n\tbody, err := io.ReadAll(io.LimitReader(resp.Body, maxEasypayResponseSize))\n\tif err != nil {\n\t\treturn nil, fmt.Errorf("easypay query read response: %w", err)\n\t}'''
+          if old not in after:
+              raise SystemExit("QueryOrder target not found")
+          p.write_text(before + after.replace(old, new, 1))
 
           p = Path("backend/internal/payment/provider/easypay_query_test.go")
           s = p.read_text()
-          old_test = '''\t\t\t\tif r.Method != http.MethodPost {\n\t\t\t\t\tt.Errorf("method = %q, want %q", r.Method, http.MethodPost)\n\t\t\t\t}\n\t\t\t\tif r.URL.Path != "/api.php" {\n\t\t\t\t\tt.Errorf("path = %q, want /api.php", r.URL.Path)\n\t\t\t\t}\n\t\t\t\tif err := r.ParseForm(); err != nil {\n\t\t\t\t\tt.Errorf("ParseForm: %v", err)\n\t\t\t\t}\n\t\t\t\tgotForm = make(url.Values, len(r.PostForm))\n\t\t\t\tfor key, values := range r.PostForm {\n\t\t\t\t\tgotForm[key] = append([]string(nil), values...)\n\t\t\t\t}'''
-          new_test = '''\t\t\t\tif r.Method != http.MethodGet {\n\t\t\t\t\tt.Errorf("method = %q, want %q", r.Method, http.MethodGet)\n\t\t\t\t}\n\t\t\t\tif r.URL.Path != "/api.php" {\n\t\t\t\t\tt.Errorf("path = %q, want /api.php", r.URL.Path)\n\t\t\t\t}\n\t\t\t\tgotForm = r.URL.Query()'''
-          if old_test not in s:
-              raise SystemExit("target test block not found")
-          p.write_text(s.replace(old_test, new_test, 1))
+          old = '''if r.Method != http.MethodPost {\n\t\t\t\t\tt.Errorf("method = %q, want %q", r.Method, http.MethodPost)\n\t\t\t\t}\n\t\t\t\tif r.URL.Path != "/api.php" {\n\t\t\t\t\tt.Errorf("path = %q, want /api.php", r.URL.Path)\n\t\t\t\t}\n\t\t\t\tif err := r.ParseForm(); err != nil {\n\t\t\t\t\tt.Errorf("ParseForm: %v", err)\n\t\t\t\t}\n\t\t\t\tgotForm = make(url.Values, len(r.PostForm))\n\t\t\t\tfor key, values := range r.PostForm {\n\t\t\t\t\tgotForm[key] = append([]string(nil), values...)\n\t\t\t\t}'''
+          new = '''if r.Method != http.MethodGet {\n\t\t\t\t\tt.Errorf("method = %q, want %q", r.Method, http.MethodGet)\n\t\t\t\t}\n\t\t\t\tif r.URL.Path != "/api.php" {\n\t\t\t\t\tt.Errorf("path = %q, want /api.php", r.URL.Path)\n\t\t\t\t}\n\t\t\t\tgotForm = r.URL.Query()'''
+          if old not in s:
+              raise SystemExit("test target not found")
+          p.write_text(s.replace(old, new, 1))
 
-      - name: Test
-        working-directory: backend
-        run: go test ./internal/payment/provider
+      - name: Format and test
+        run: |
+          gofmt -w backend/internal/payment/provider/easypay.go backend/internal/payment/provider/easypay_query_test.go
+          cd backend
+          go test ./internal/payment/provider
 
-      - name: Commit patch
+      - name: Commit files and remove workflow
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add backend/internal/payment/provider/easypay.go backend/internal/payment/provider/easypay_query_test.go
-          git diff --cached --quiet || git commit -m "fix: use GET for EasyPay order queries"
+          rm -f .github/workflows/apply-easypay-patch.yml
+          git add backend/internal/payment/provider/easypay.go backend/internal/payment/provider/easypay_query_test.go .github/workflows/apply-easypay-patch.yml
+          git commit -m "fix: use GET for EasyPay order queries [skip ci]"
           git push
